@@ -1,83 +1,82 @@
 import cv2
 import numpy as np
 
-
+# Paths to model configuration, weights, and object names
 yolo_ka_blueprint = "d:/Downloads/YOLO-Real-Time-Object-Detection-master/cfg/yolov3.cfg"
-yolo_ka_weight = "d:/Downloads/YOLO-Real-Time-Object-Detection-master/weight/yolov3.weights"
-chehre_ke_naam = "d:/Downloads/YOLO-Real-Time-Object-Detection-master/weight/coco.names"
+weights_path = "d:/Downloads/YOLO-Real-Time-Object-Detection-master/weight/yolov3.weights"
+coco_names_path = "d:/Downloads/YOLO-Real-Time-Object-Detection-master/weight/coco.names"
 
-dimaag = cv2.dnn.readNetFromDarknet(yolo_ka_blueprint, yolo_ka_weight)
-dimaag.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
-dimaag.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
+# Load YOLO model
+net = cv2.dnn.readNetFromDarknet(yolo_ka_blueprint, weights_path)
+net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
+net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
 
+# coco_names_path ka data load kr rhe hai taaki read kr sake objects ko accordingly......
+with open(coco_names_path, 'r') as f:
+    classes = [line.strip() for line in f.readlines()]
 
-with open(chehre_ke_naam, 'r') as f:
-    naam_ke_labels = [line.strip() for line in f.readlines()]
-
-
-secret_layers = dimaag.getLayerNames()
-output_layers = [secret_layers[i - 1] for i in dimaag.getUnconnectedOutLayers()]
-
-
-camra = cv2.VideoCapture(0)
+layer_names = net.getLayerNames()
 
 
-while camra.isOpened():
-    ret, photo = camra.read()
+output_layers = [layer_names[i - 1] for i in net.getUnconnectedOutLayers().flatten()]
+
+# webcam start karne k liye instead of webcam if kisi video me detect krna hai toh 0 ki jgah uss video ka path daal denge.....
+camera = cv2.VideoCapture(0)
+
+while camera.isOpened():
+    ret, photo = camera.read()
     if not ret:
         break
 
-    
-    oonchai, chorai, _ = photo.shape
+    height, width, channels = photo.shape
 
-    
+    # photo ko yolo ko feed krne ke liye blob bna rhe hai......
     blob = cv2.dnn.blobFromImage(photo, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
-    dimaag.setInput(blob)
-    detections = dimaag.forward(output_layers)
+    net.setInput(blob)
+    detections = net.forward(output_layers)
 
-    
+    # alag alag lists bna rhe hai taaki detected items ko rakh sake......
     items = []
-    bharosa_levels = []
-    dibbe = []
+    confidences = []
+    boxes = []
 
-    
     for detection in detections:
         for item in detection:
             scores = item[5:]
             item_id = np.argmax(scores)
-            bharosa = scores[item_id]
-            if bharosa > 0.5:  
-                center_x = int(item[0] * chorai)
-                center_y = int(item[1] * oonchai)
-                width = int(item[2] * chorai)
-                height = int(item[3] * oonchai)
+            confidence = scores[item_id]
+            if confidence > 0.5:  
+                center_x = int(item[0] * width)
+                center_y = int(item[1] * height)
+                w = int(item[2] * width)
+                h = int(item[3] * height)
 
-                x = int(center_x - width / 2)
-                y = int(center_y - height / 2)
+                # Rectangle coordinates
+                x = int(center_x - w / 2)
+                y = int(center_y - h / 2)
 
-                dibbe.append([x, y, width, height])
-                bharosa_levels.append(float(bharosa))
+                boxes.append([x, y, w, h])
+                confidences.append(float(confidence))
                 items.append(item_id)
 
-    
-    bachhe_hue = cv2.dnn.NMSBoxes(dibbe, bharosa_levels, 0.5, 0.4)
+    # Non-max suppression laga rhe hai taaki overlapping boxes ko hataye
+    indices = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
 
-    
-    if bachhe_hue is not None:
-        for i in bachhe_hue.flatten():
-            x, y, width, height = dibbe[i]
-            label = str(naam_ke_labels[items[i]])
-            bharosa = bharosa_levels[i]
-            rang = (0, 255, 0)  
-            cv2.rectangle(photo, (x, y), (x + width, y + height), rang, 2)
-            cv2.putText(photo, f'{label} {bharosa:.2f}', (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, rang, 2)
+    # agar koi item detect hota hai toh uspe rectangle aur label draw krenge
+    if len(indices) > 0:
+        for i in indices.flatten():
+            x, y, w, h = boxes[i]
+            label = str(classes[items[i]])
+            confidence = confidences[i]
+            color = (0, 255, 0)  
+            cv2.rectangle(photo, (x, y), (x + w, y + h), color, 2)
+            cv2.putText(photo, f'{label} {confidence:.2f}', (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-    
     cv2.imshow('Live Object Detection', photo)
 
-    
+    # n press krne se loop break ho jayega
     if cv2.waitKey(1) & 0xFF == ord('n'):
         break
 
-camra.release()
+camera.release()
 cv2.destroyAllWindows()
